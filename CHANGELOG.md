@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.2
+
+- Switch between local and Marketplace copies from settings, remembering the selected source and preserving plugin settings.
+- Show “Use local” only when a local copy is available. Marketplace-only installations keep their normal behavior.
+- Prevent duplicate runtimes regardless of load order and show the active installation source accurately.
+- Add explicit local/Marketplace installer modes and remove only the local copy when uninstalling.
+- Keep local update checks from changing an inactive Marketplace installation.
+
 ## 1.3.1
 
 - Add independent settings for the native playlist menu and saved-elsewhere indicators, both enabled by default for new and existing installations.

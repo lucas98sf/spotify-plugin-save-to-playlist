@@ -15,8 +15,13 @@ import type {
   SaveButton,
   EventBus,
   EventCallback,
+  Installation,
 } from "./types";
-export function start(S: SpicetifyHost, doc: Document = document): Runtime {
+export function start(
+  S: SpicetifyHost,
+  doc: Document = document,
+  installation: Installation = "local",
+): Runtime {
   const api = S.Platform;
   const storage = api.LocalStorageAPI;
   let config: Settings;
@@ -39,7 +44,13 @@ export function start(S: SpicetifyHost, doc: Document = document): Runtime {
   let disposed = false;
   let ownPlaylistWrites = 0;
   const refreshRetries = new Set<ReturnType<typeof setTimeout>>();
-  const settingsView = createSettingsView(S, doc, () => config, configure);
+  const settingsView = createSettingsView(
+    S,
+    doc,
+    () => config,
+    configure,
+    installation,
+  );
   const showSettings = settingsView.show;
   let scheduled = false;
   const style = doc.createElement("style");
@@ -504,6 +515,7 @@ export function start(S: SpicetifyHost, doc: Document = document): Runtime {
   scan();
   return {
     version: VERSION,
+    installation,
     configure,
     showSettings,
     scan,

@@ -1,6 +1,7 @@
 /** The Spicetify/Spotify surface this extension uses. Internal APIs stay at this boundary. */
 export type SaveMode = "playlist" | "both";
 export type Destination = "first-pinned" | "recently-updated";
+export type Installation = "local" | "marketplace";
 export interface Settings {
   enabled: boolean;
   mode: SaveMode;
@@ -72,7 +73,7 @@ export interface Platform {
   };
   LocalStorageAPI: {
     getItem(key: string): unknown;
-    setItem(key: string, value: Settings): void;
+    setItem(key: string, value: Settings | string): void;
   };
   History?: {
     location?: { pathname?: string };
@@ -124,6 +125,7 @@ export interface ManagedControl {
 }
 export interface Runtime {
   readonly version: string;
+  readonly installation: Installation;
   configure(next: unknown): void;
   showSettings(): void;
   scan(): void;
@@ -166,4 +168,5 @@ declare global {
   var Spicetify: SpicetifyHost | undefined;
   var SaveToPlaylist: Runtime | undefined;
   var PinnedPlaylistPlus: Runtime | undefined;
+  var SaveToPlaylistLocalInstallId: string | undefined;
 }

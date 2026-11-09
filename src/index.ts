@@ -1,4 +1,10 @@
-import { start } from "./runtime";
+import { activateInstallation } from "./installation";
+import { installationForScript } from "./installation-source";
+
+// Capture the executing script before asynchronous readiness checks lose it.
+const installation = installationForScript(
+  document.currentScript?.getAttribute("src") || "",
+);
 
 function waitForSpicetify(): void {
   const S = globalThis.Spicetify;
@@ -15,10 +21,6 @@ function waitForSpicetify(): void {
     setTimeout(waitForSpicetify, 500);
     return;
   }
-  const runtime =
-    globalThis.SaveToPlaylist || globalThis.PinnedPlaylistPlus || start(S);
-  globalThis.SaveToPlaylist = runtime;
-  // Older installed bundles use this alias to prevent duplicate initialization.
-  globalThis.PinnedPlaylistPlus = runtime;
+  activateInstallation(S, document, installation);
 }
 waitForSpicetify();

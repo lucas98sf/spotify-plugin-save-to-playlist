@@ -1,19 +1,27 @@
 import { target, destinationLabel } from "./actions";
 import { errorMessage } from "./errors";
-import { VERSION, NAME, REPO, LEGACY_REPO } from "./constants";
+import { hasInstallation, selectInstallation } from "./installation-source";
+import { VERSION, NAME } from "./constants";
 import {
   latestRelease,
   installRelease,
   RELEASES_URL,
   type Release,
 } from "./updates";
-import type { SpicetifyHost, Settings, ToggleKey, Destination } from "./types";
+import type {
+  SpicetifyHost,
+  Settings,
+  ToggleKey,
+  Destination,
+  Installation,
+} from "./types";
 
 export function createSettingsView(
   S: SpicetifyHost,
   doc: Document,
   getSettings: () => Settings,
   configure: (next: unknown) => void,
+  installation: Installation,
 ) {
   const api = S.Platform;
   let settingsMount: HTMLElement | null = null;
@@ -162,11 +170,33 @@ export function createSettingsView(
       actions.append(save);
     }
     const version = doc.createElement("p");
-    const marketplace = [...doc.scripts].some((script) =>
-      [REPO, LEGACY_REPO].some((repo) => script.src.includes(repo)),
-    );
-    version.textContent = `Version ${VERSION} · ${marketplace ? "Marketplace" : "Manual installation"}`;
-    root.append(version);
+    const marketplace = installation === "marketplace";
+    version.textContent = `Version ${VERSION} · ${marketplace ? "Marketplace" : "Local"}`;
+    const switchHint = doc.createElement("p");
+    const otherInstallation = marketplace ? "local" : "marketplace";
+    const canSwitch = hasInstallation(doc, otherInstallation);
+    switchHint.textContent = canSwitch
+      ? "Switching reloads Spotify. Your settings are preserved."
+      : "Install Save to Playlist in Marketplace once to enable UI switching.";
+    const switchButton = doc.createElement("button");
+    switchButton.type = "button";
+    switchButton.className = "ppp-switch";
+    switchButton.textContent = marketplace ? "Use local" : "Use Marketplace";
+    switchButton.disabled = !canSwitch;
+    switchButton.onclick = () => {
+      try {
+        selectInstallation(S, doc, otherInstallation);
+        doc.defaultView?.location.reload();
+      } catch (error) {
+        switchHint.textContent = errorMessage(error);
+      }
+    };
+    const sourceRow = doc.createElement("div");
+    sourceRow.className = "ppp-update-actions";
+    sourceRow.append(version);
+    if (!marketplace || canSwitch) sourceRow.append(switchButton);
+    root.append(sourceRow);
+    if (!marketplace || canSwitch) root.append(switchHint);
     const updateStatus = doc.createElement("p");
     updateStatus.setAttribute("role", "status");
     const update = doc.createElement("button");
@@ -182,7 +212,7 @@ export function createSettingsView(
       }
       update.disabled = true;
       try {
-        if (release) {
+        if (release && marketplace) {
           await installRelease(release);
           installed = true;
           updateStatus.textContent = `Version ${release.version} selected. Reload Spotify to finish updating. Your settings are preserved.`;
@@ -192,7 +222,12 @@ export function createSettingsView(
           updateStatus.textContent = release
             ? `Version ${release.version} is available.`
             : `Version ${VERSION} is up to date.`;
-          if (release) update.textContent = `Install v${release.version}`;
+          if (release) {
+            if (marketplace) update.textContent = `Install v${release.version}`;
+            else
+              updateStatus.textContent +=
+                " For a release download, run install.ps1 -Update; for your working copy, run install.ps1 -Local.";
+          }
         }
       } catch (error) {
         updateStatus.textContent = errorMessage(error);

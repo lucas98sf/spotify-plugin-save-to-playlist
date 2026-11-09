@@ -302,7 +302,7 @@ test("settings name the first pinned playlist automatically and offer no overrid
     "First pinned playlist: First",
   );
   assert.equal(modal.content.querySelector('input[type="text"]'), null);
-  assert.equal(modal.content.querySelectorAll("button").length, 2);
+  assert.equal(modal.content.querySelectorAll("button").length, 3);
   assert.match(modal.content.textContent, /Check for updates/);
   modal.content.querySelector("button").click();
   const saved = calls.find((call) => call[0] === "storage")[2];
@@ -1141,6 +1141,50 @@ test("settings expose independent saved-control toggles, retain choices and pers
     assert.equal(saved.playlistMenu, false);
     assert.equal(saved.showOtherPlaylists, false);
   } finally {
+    runtime.dispose();
+    dom.window.close();
+  }
+});
+
+test("local update checks explain the correct command and never update Marketplace records", async () => {
+  const { dom, S } = stateFixture(
+    '<script src="https://cdn.jsdelivr.net/gh/lucas98sf/spotify-plugin-save-to-playlist@v1.3.1/dist/pinned-playlist-plus.js"></script>',
+  );
+  const previousFetch = global.fetch;
+  const requests = [];
+  global.fetch = async (url) => {
+    requests.push(url);
+    return {
+      ok: true,
+      json: async () => ({
+        tag_name: "v99.0.0",
+        draft: false,
+        prerelease: false,
+      }),
+    };
+  };
+  let modal;
+  S.PopupModal.display = (value) => {
+    modal = value;
+  };
+  const runtime = start(S, dom.window.document, "local");
+  try {
+    runtime.showSettings();
+    assert.match(modal.content.textContent, /Version .* · Local/);
+    const update = modal.content.querySelector(".ppp-update");
+    update.click();
+    await settle();
+    assert.match(modal.content.textContent, /install.ps1 -Update/);
+    assert.match(modal.content.textContent, /install.ps1 -Local/);
+    assert.equal(update.textContent, "Check for updates");
+    update.click();
+    await settle();
+    assert.equal(requests.length, 2);
+    assert.ok(
+      requests.every((url) => url.startsWith("https://api.github.com/")),
+    );
+  } finally {
+    global.fetch = previousFetch;
     runtime.dispose();
     dom.window.close();
   }

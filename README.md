@@ -8,7 +8,7 @@ A standalone Spicetify extension that replaces song-saving **+** controls with o
 
 Search for **Save to Playlist** in Spicetify Marketplace after its index refreshes. This repository includes the required manifest, preview and compiled extension, and uses the `spicetify-extensions` topic for discovery. There is no separate extension submission PR. See the [official publishing requirements](https://github.com/spicetify/marketplace/wiki/Publishing-to-Marketplace).
 
-If you previously installed manually, disable that copy before installing from Marketplace to avoid loading two copies. On Windows, use `./install.ps1 -Uninstall`, then install the Marketplace version.
+To remove a local copy and use Marketplace, run `./install.ps1 -Marketplace` (`-Uninstall` remains an alias). Install **Save to Playlist** from Marketplace once if it is not already installed.
 
 If you installed before the compiled bundle moved to `dist/`, remove the old entry from **Marketplace → Installed**, then install it again from **Extensions** and reload Spotify. Marketplace keeps the script URL from installation; opening Installed alone does not refresh a changed file path. The settings dialog displays the running version so you can confirm an update.
 
@@ -18,7 +18,7 @@ Open **Save to Playlist settings** to see the running version. Click **Check for
 
 Fresh Marketplace installs use the release tag specified by the manifest. Use the settings updater for subsequent release updates. Marketplace's Installed tab checks repository activity but can retain its stored file path; it does not compare semantic versions. Tagged URLs avoid cached copies of the mutable main branch. The dist path stays stable in future releases. If Marketplace shows an older card after a release, restart Spotify to clear its session manifest cache before reinstalling.
 
-For a manual installation, run `./install.ps1 -Update` from the project folder or an extracted release ZIP. It downloads the latest stable release, verifies its SHA-256 checksum, and reapplies Spicetify. Avoid enabling a manual copy alongside the Marketplace copy.
+For a local/manual installation, run `./install.ps1 -Update` from the project folder or an extracted release ZIP. It downloads the latest stable release, verifies its SHA-256 checksum, and reapplies Spicetify. Local update checks show this command instead of updating a dormant Marketplace copy.
 
 See [release notes](https://github.com/lucas98sf/spotify-plugin-save-to-playlist/releases) and [CHANGELOG.md](CHANGELOG.md).
 
@@ -28,7 +28,7 @@ If settings already shows a version, use **Check for updates → Install → Rel
 
 For older copies without an update control, remove this extension from **Marketplace → Installed**, fully quit Spotify (including its tray process), reopen it, and install from **Extensions** again. Quitting clears Marketplace's session manifest cache. Confirm the running version in the extension's settings afterward.
 
-Deleting Spotify's music cache does not purge jsDelivr's server cache. New installations now use a release tag to avoid that stale main-branch URL. If Marketplace still serves an old card, wait for the remote manifest cache to refresh. For an immediate alternative, remove the Marketplace copy, download the latest release ZIP, extract it, and run `./install.ps1`; that installs the version from the ZIP manually. Do not keep both copies enabled.
+Deleting Spotify's music cache does not purge jsDelivr's server cache. New installations now use a release tag to avoid that stale main-branch URL. If Marketplace still serves an old card, wait for the remote manifest cache to refresh. For an immediate alternative, download the latest release ZIP, extract it, and run `./install.ps1`; that activates the version from the ZIP locally while keeping the Marketplace installation. Local takes precedence when both copies are installed.
 
 ## Install on Windows
 
@@ -39,6 +39,25 @@ With Spicetify already installed, run from this folder:
 ```
 
 This copies the extension into the configured Spicetify Extensions directory, enables it alongside existing extensions, and runs `spicetify apply` (which can restart Spotify). No developer account, API key, or build step is needed.
+
+### Switching between local and Marketplace
+
+Keep both copies installed. In **Save to Playlist settings**, click **Use Marketplace** or **Use local** beside the running version. Spotify reloads and remembers the selected source for your account. Plugin settings are shared and preserved.
+
+Both copies need a version that supports UI switching. **Use local** appears in Marketplace settings only when a local copy is available. If Marketplace is missing while using local, its switch is disabled and explains the one-time installation. Older Marketplace releases must be updated before they can offer the return button.
+
+The installer commands remain available:
+
+| Command                      | Result                                                                                         |
+| ---------------------------- | ---------------------------------------------------------------------------------------------- |
+| `./install.ps1 -Local`       | Activate the compiled working copy. Select local explicitly, overriding a previous UI choice.  |
+| `./install.ps1 -Marketplace` | Disable and delete the local copy. An existing Marketplace installation resumes after restart. |
+| `./install.ps1 -Uninstall`   | Same local removal as `-Marketplace`; does not uninstall Marketplace.                          |
+| `./install.ps1 -Update`      | Download and activate the latest published release as a local installation.                    |
+
+For source changes, run `npm run build` before `./install.ps1 -Local`. Add `-NoRestart` to apply files without interrupting playback, then restart Spotify when ready. Other extensions and account settings are preserved. If Marketplace was previously uninstalled, install **Save to Playlist** there once after switching back.
+
+Settings display **Local** or **Marketplace** for the runtime that actually started. Without an explicit selection, local takes precedence. UI selection overrides that default. A local copy can replace an older Marketplace runtime without creating duplicate controls.
 
 Open Spotify's profile menu → **Save to Playlist settings**.
 
@@ -80,16 +99,16 @@ npm run build
 
 `npm run check` runs strict type checking, formatting checks, and compilation. Use `npm run format` to format changes. After editing source, rebuild and commit the generated bundle in `dist/` with it. CI checks Windows and Linux and rejects a bundle that differs from its source.
 
-| Module                              | Responsibility                                              |
-| ----------------------------------- | ----------------------------------------------------------- |
-| `src/index.ts`                      | Wait for Spicetify and start once                           |
-| `src/types.ts`                      | Typed boundary for the Spotify and Spicetify APIs used here |
-| `src/settings.ts`                   | Validate persisted settings                                 |
-| `src/actions.ts`                    | Resolve the selected playlist, save songs and toggle likes  |
-| `src/dom.ts`                        | Identify native save buttons and their track URIs           |
-| `src/runtime.ts`                    | Manage controls, membership caches, events and cleanup      |
-| `src/settings-view.ts`              | Settings dialog and native save button                      |
-| `src/constants.ts`, `src/styles.ts` | Icons, defaults and visual styles                           |
+| Module                                | Responsibility                                              |
+| ------------------------------------- | ----------------------------------------------------------- |
+| `src/index.ts`, `src/installation.ts` | Wait for Spicetify and activate the selected installation   |
+| `src/types.ts`                        | Typed boundary for the Spotify and Spicetify APIs used here |
+| `src/settings.ts`                     | Validate persisted settings                                 |
+| `src/actions.ts`                      | Resolve the selected playlist, save songs and toggle likes  |
+| `src/dom.ts`                          | Identify native save buttons and their track URIs           |
+| `src/runtime.ts`                      | Manage controls, membership caches, events and cleanup      |
+| `src/settings-view.ts`                | Settings dialog and native save button                      |
+| `src/constants.ts`, `src/styles.ts`   | Icons, defaults and visual styles                           |
 
 The internal API types describe the observed client surface. Spotify's private React-fiber access is isolated in `dom.ts`; no broad `any` types or suppressed type errors are used. Tests load a separate CommonJS build of the same source modules, without starting the browser extension.
 

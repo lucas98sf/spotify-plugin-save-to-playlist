@@ -1,14 +1,25 @@
-param([switch]$Uninstall, [switch]$Update)
+[CmdletBinding(DefaultParameterSetName = 'Local')]
+param(
+    [Parameter(ParameterSetName = 'Local')][switch]$Local,
+    [Parameter(Mandatory, ParameterSetName = 'Marketplace')][switch]$Marketplace,
+    [Parameter(Mandatory, ParameterSetName = 'Uninstall')][switch]$Uninstall,
+    [Parameter(Mandatory, ParameterSetName = 'Update')][switch]$Update,
+    [switch]$NoRestart
+)
 $ErrorActionPreference = 'Stop'
-if ($Uninstall -and $Update) { throw 'Choose either -Uninstall or -Update.' }
 $extensionName = 'pinned-playlist-plus.js'
 $configPath = (& spicetify -c | Select-Object -Last 1).Trim()
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $configPath)) {
     throw 'Could not locate the Spicetify configuration.'
 }
 $extensionDirectory = Join-Path (Split-Path -Parent $configPath) 'Extensions'
-if ($Uninstall) {
+$installedBundle = Join-Path $extensionDirectory $extensionName
+if ($Uninstall -or $Marketplace) {
     & spicetify config extensions "$extensionName-"
+    if ($LASTEXITCODE -ne 0) { throw 'Could not disable the local extension.' }
+    if (Test-Path -LiteralPath $installedBundle) { Remove-Item -LiteralPath $installedBundle -Force }
+    Write-Host 'Local copy removed. Plugin settings and Marketplace installation are preserved.'
+    Write-Host 'If not installed already, install Save to Playlist from Marketplace once.'
 } else {
     New-Item -ItemType Directory -Path $extensionDirectory -Force | Out-Null
     $bundlePath = Join-Path $PSScriptRoot "dist/$extensionName"
@@ -16,7 +27,7 @@ if ($Uninstall) {
     if (-not (Test-Path -LiteralPath $bundlePath)) { $bundlePath = Join-Path $PSScriptRoot $extensionName }
     $downloadDirectory = $null
     if ($Update) {
-        $release = Invoke-RestMethod 'https://api.github.com/repos/lucas98sf/pinned-playlist-plus/releases/latest'
+        $release = Invoke-RestMethod 'https://api.github.com/repos/lucas98sf/spotify-plugin-save-to-playlist/releases/latest'
         if ($release.draft -or $release.prerelease -or $release.tag_name -notmatch '^v\d+\.\d+\.\d+$') {
             throw 'GitHub returned an unsupported release.'
         }
@@ -36,10 +47,19 @@ if ($Uninstall) {
     if (-not (Test-Path -LiteralPath $bundlePath)) {
         throw 'The compiled extension was not found. Run npm run build first.'
     }
-    Copy-Item -LiteralPath $bundlePath -Destination (Join-Path $extensionDirectory $extensionName) -Force
+    # Select this explicit install once without overriding later UI switches.
+    # Keep the compatibility banner as the first line of the installed script.
+    $localInstallId = [guid]::NewGuid().ToString('N')
+    $bundleContent = [IO.File]::ReadAllText($bundlePath)
+    $bannerEnd = $bundleContent.IndexOf("`n") + 1
+    $selection = "globalThis.SaveToPlaylistLocalInstallId = '$localInstallId';`n"
+    $installedContent = $bundleContent.Insert($bannerEnd, $selection)
+    [IO.File]::WriteAllText($installedBundle, $installedContent, [Text.UTF8Encoding]::new($false))
     if ($downloadDirectory) { Remove-Item -LiteralPath $bundlePath -Force; Remove-Item -LiteralPath $downloadDirectory }
     & spicetify config extensions $extensionName
+    if ($LASTEXITCODE -ne 0) { throw 'Could not enable the local extension.' }
+    Write-Host 'Local copy selected. It takes precedence over Marketplace; no Marketplace uninstall is needed.'
 }
-if ($LASTEXITCODE -ne 0) { throw 'Could not update the Spicetify extension configuration.' }
-& spicetify apply
+if ($NoRestart) { & spicetify -n apply } else { & spicetify apply }
 if ($LASTEXITCODE -ne 0) { throw 'Spicetify apply failed. Read its output above.' }
+if ($NoRestart) { Write-Host 'Restart Spotify to finish switching.' }
