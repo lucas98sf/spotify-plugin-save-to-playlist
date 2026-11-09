@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.0
+
+- Retain Spotify’s native playlist picker for saved songs.
+- Distinguish songs in the selected destination with a filled green check and songs saved elsewhere with an outlined gray check.
+- Align playlist indicators and the separate ♥ button across saved and unsaved songs.
+- Refresh membership after native playlist edits, including removals immediately after adding and delayed Spotify index updates.
+- Add a short animation for one-click saves, respecting reduced-motion preferences.
+
 ## 1.2.5
 
 - Shorten the settings description and follow the selected destination in both the description and playlist-name line.

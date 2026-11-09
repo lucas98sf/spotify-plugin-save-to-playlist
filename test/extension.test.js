@@ -868,3 +868,161 @@ test("remove and readd render confirmed membership despite delayed Spotify statu
     dom.window.close();
   }
 });
+
+test("saved-anywhere checks retain Spotify's actual menu button and follow native changes", async () => {
+  const { dom, S, calls, tracks } = stateFixture(
+    '<div data-testid="now-playing-widget"><button class="main-addButton-button" aria-checked="true" aria-label="Add to playlist"><svg data-native-icon="true"></svg></button></div>',
+  );
+  const doc = dom.window.document;
+  const original = doc.querySelector("button");
+  const nativeIcon = original.firstElementChild;
+  let menuClicks = 0;
+  original.addEventListener("click", () => menuClicks++);
+  const runtime = start(S, doc);
+  await runtime.refreshStatus(true);
+  const [primary, heart] = doc.querySelectorAll(".ppp-button");
+  assert.equal(tracks.size, 0); // Saved elsewhere, absent from our target.
+  assert.equal(original.hasAttribute("data-ppp-hidden"), false);
+  assert.equal(primary.hidden, true);
+  assert.equal(original.firstElementChild, nativeIcon);
+  assert.equal(original.getAttribute("aria-label"), "Add to playlist");
+  original.click();
+  assert.equal(menuClicks, 1);
+  assert.equal(
+    calls.filter((c) => ["playlist", "like", "removePlaylist"].includes(c[0]))
+      .length,
+    0,
+  );
+  heart.click();
+  await settle();
+  assert.equal(heart.dataset.pppIcon, "heartFilled");
+  assert.equal(menuClicks, 1);
+  original.setAttribute("aria-checked", "false");
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(original.hasAttribute("data-ppp-hidden"), true);
+  assert.equal(primary.hidden, false);
+  primary.click();
+  await settle();
+  assert.equal(tracks.has(playlist + ":" + song), true);
+  assert.equal(primary.dataset.pppIcon, "check");
+  assert.equal(primary.classList.contains("ppp-added"), true);
+  assert.equal(original.classList.contains("ppp-added"), true);
+  original.setAttribute("aria-checked", "true");
+  runtime.scan();
+  assert.equal(primary.hidden, true);
+  assert.equal(original.hasAttribute("data-ppp-hidden"), false);
+  runtime.configure({ enabled: false });
+  assert.equal(original.hasAttribute("data-ppp-native"), false);
+  assert.equal(original.classList.contains("ppp-added"), false);
+  assert.equal(original.firstElementChild, nativeIcon);
+  original.click();
+  assert.equal(menuClicks, 2);
+  runtime.dispose();
+  dom.window.close();
+});
+
+test("native saved menu remains available on the destination playlist without the optional heart", async () => {
+  const { dom, S, tracks } = stateFixture(
+    '<div role="row" data-uri="' +
+      song +
+      '"><button class="main-addButton-button" aria-checked="true"></button></div>',
+    "/playlist/first",
+  );
+  tracks.add(playlist + ":" + song);
+  const runtime = start(S, dom.window.document);
+  runtime.configure({ separateHeart: false });
+  await runtime.refreshStatus(true);
+  assert.equal(dom.window.document.querySelector(".ppp-controls").hidden, true);
+  assert.equal(
+    dom.window.document.querySelector("button").hasAttribute("data-ppp-hidden"),
+    false,
+  );
+  runtime.dispose();
+  dom.window.close();
+});
+
+test("native checks distinguish target membership and external removal invalidates a recent save", async () => {
+  const { dom, S, api, tracks, playlistEvents } = stateFixture(
+    '<div data-testid="now-playing-widget" style="display:flex;column-gap:8px"><button class="main-addButton-button" aria-checked="false" aria-description="Original description"></button></div>',
+  );
+  const doc = dom.window.document;
+  const original = doc.querySelector("button");
+  const runtime = start(S, doc);
+  try {
+    await runtime.refreshStatus(true);
+    doc.querySelector(".ppp-button").click();
+    await settle();
+    assert.equal(tracks.has(playlist + ":" + song), true);
+    original.setAttribute("aria-checked", "true");
+    runtime.scan();
+    assert.equal(original.dataset.pppMembership, "target");
+    assert.match(original.getAttribute("aria-description"), /Saved in First/);
+    assert.equal(
+      doc.querySelector(".ppp-controls").style.marginInlineStart,
+      "-6px",
+    );
+    // A native menu removal happens inside the five-second own-write window.
+    await api.PlaylistAPI.remove(playlist, [{ uri: song, uid: "row-" + song }]);
+    playlistEvents.emit("operation_complete", { uri: playlist });
+    await settle();
+    assert.equal(original.dataset.pppMembership, "other");
+    assert.equal(
+      original.getAttribute("aria-description"),
+      "Saved elsewhere. Open playlist menu.",
+    );
+    // The actual native control is kept for the playlist menu in both states.
+    assert.equal(original.hasAttribute("data-ppp-hidden"), false);
+    assert.equal(doc.querySelector(".ppp-button").hidden, true);
+    original.setAttribute("aria-checked", "false");
+    runtime.scan();
+    assert.equal(doc.querySelector(".ppp-button").dataset.pppIcon, "plus");
+    assert.equal(doc.querySelector(".ppp-button").hidden, false);
+    assert.equal(
+      doc.querySelector(".ppp-controls").style.marginInlineStart,
+      "",
+    );
+    runtime.configure({ enabled: false });
+    assert.equal(original.hasAttribute("data-ppp-membership"), false);
+    assert.equal(
+      original.getAttribute("aria-description"),
+      "Original description",
+    );
+  } finally {
+    runtime.dispose();
+    dom.window.close();
+  }
+});
+
+test("native removal retries a lagging index and disposed runtimes cancel retries", async () => {
+  const { dom, S, api, tracks, playlistEvents } = stateFixture(
+    '<div data-testid="now-playing-widget"><button class="main-addButton-button" aria-checked="true"></button></div>',
+  );
+  tracks.add(playlist + ":" + song);
+  const runtime = start(S, dom.window.document);
+  try {
+    await runtime.refreshStatus(true);
+    const original = dom.window.document.querySelector("button");
+    assert.equal(original.dataset.pppMembership, "target");
+    const read = api.PlaylistAPI.getItem;
+    let stale = true;
+    let reads = 0;
+    api.PlaylistAPI.getItem = async (...args) => {
+      reads++;
+      return stale ? { uri: song, uid: "row-" + song } : read(...args);
+    };
+    tracks.clear();
+    playlistEvents.emit("operation_complete", { uri: playlist });
+    await settle();
+    assert.equal(original.dataset.pppMembership, "target");
+    stale = false;
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    assert.equal(original.dataset.pppMembership, "other");
+    runtime.dispose();
+    const readsBefore = reads;
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    assert.equal(reads, readsBefore);
+  } finally {
+    runtime.dispose();
+    dom.window.close();
+  }
+});

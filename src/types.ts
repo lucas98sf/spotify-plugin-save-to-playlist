@@ -113,6 +113,8 @@ export interface SaveButton extends HTMLButtonElement {
 }
 export interface ManagedControl {
   uri: string;
+  nativeDescription: string | null;
+  nativeSaved: boolean;
   primary: SaveButton;
   heart: SaveButton | null;
   group: HTMLSpanElement;

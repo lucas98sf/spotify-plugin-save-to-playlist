@@ -37,6 +37,8 @@ export function start(S: SpicetifyHost, doc: Document = document): Runtime {
   let statusGeneration = 0;
   let configGeneration = 0;
   let disposed = false;
+  let ownPlaylistWrites = 0;
+  const refreshRetries = new Set<ReturnType<typeof setTimeout>>();
   const settingsView = createSettingsView(S, doc, () => config, configure);
   const showSettings = settingsView.show;
   let scheduled = false;
@@ -63,11 +65,22 @@ export function start(S: SpicetifyHost, doc: Document = document): Runtime {
     if (button._tippy) button._tippy.setContent(text);
     else button.title = text;
   }
+  function pressed(button: SaveButton, value: boolean) {
+    const text = String(value);
+    if (button.getAttribute("aria-pressed") !== text)
+      button.setAttribute("aria-pressed", text);
+  }
   function remove(original: HTMLButtonElement, entry: ManagedControl) {
     entry.primary._tippy?.destroy();
     entry.heart?._tippy?.destroy();
     entry.group.remove();
     original.removeAttribute("data-ppp-hidden");
+    original.removeAttribute("data-ppp-native");
+    original.removeAttribute("data-ppp-membership");
+    if (entry.nativeDescription === null)
+      original.removeAttribute("aria-description");
+    else original.setAttribute("aria-description", entry.nativeDescription);
+    original.classList.remove("ppp-added");
     managed.delete(original);
   }
   function makeButton(uri: string, kind: "primary" | "heart"): SaveButton {
@@ -106,32 +119,38 @@ export function start(S: SpicetifyHost, doc: Document = document): Runtime {
           updateHearts(uri, liked);
           notify(liked ? "Added to Liked Songs" : "Removed from Liked Songs");
         } else {
-          const results = await actions.save(
-            uri,
-            snapshot,
-            (playlist, present) => {
-              if (disposed || savedConfigGeneration !== configGeneration)
-                return;
-              // Spotify's membership index can lag behind a successful write.
-              // Render the confirmed result immediately and invalidate older reads.
-              statusGeneration++;
-              if (activeTarget?.uri !== playlist.uri) {
-                membership.clear();
-                confirmedUntil.clear();
-                activeTarget = playlist;
-                watchPlaylist(playlist.uri);
-              }
-              membership.set(uri, { present, time: Date.now() });
-              confirmedUntil.set(uri, Date.now() + 5000);
-              renderStatus();
-            },
-          );
-          notify(
-            results
-              .map(({ action, destination }) => `${action} ${destination}`)
-              .join("; "),
-          );
-          if (snapshot.mode === "both") updateHearts(uri, true);
+          ownPlaylistWrites++;
+          try {
+            const results = await actions.save(
+              uri,
+              snapshot,
+              (playlist, present) => {
+                if (disposed || savedConfigGeneration !== configGeneration)
+                  return;
+                // Spotify's membership index can lag behind a successful write.
+                // Render the confirmed result immediately and invalidate older reads.
+                statusGeneration++;
+                if (activeTarget?.uri !== playlist.uri) {
+                  membership.clear();
+                  confirmedUntil.clear();
+                  activeTarget = playlist;
+                  watchPlaylist(playlist.uri);
+                }
+                membership.set(uri, { present, time: Date.now() });
+                confirmedUntil.set(uri, Date.now() + 5000);
+                renderStatus();
+                if (present) animateAdded(uri);
+              },
+            );
+            notify(
+              results
+                .map(({ action, destination }) => `${action} ${destination}`)
+                .join("; "),
+            );
+            if (snapshot.mode === "both") updateHearts(uri, true);
+          } finally {
+            ownPlaylistWrites--;
+          }
         }
       } catch (error) {
         console.error(`[${NAME}]`, error);
@@ -155,9 +174,21 @@ export function start(S: SpicetifyHost, doc: Document = document): Runtime {
       if (entry.uri !== uri) continue;
       const heart = entry.heart;
       if (!heart) continue;
-      heart.setAttribute("aria-pressed", String(value));
+      pressed(heart, value);
       icon(heart, value ? "heartFilled" : "heart");
       label(heart, value ? "Remove from Liked Songs" : "Add to Liked Songs");
+    }
+  }
+  function animateAdded(uri: string) {
+    for (const [original, entry] of managed) {
+      if (entry.uri !== uri) continue;
+      // Animate both surfaces: Spotify may switch to its own saved control
+      // while the membership index catches up with the successful write.
+      for (const button of [original, entry.primary]) {
+        button.classList.remove("ppp-added");
+        void button.offsetWidth;
+        button.classList.add("ppp-added");
+      }
     }
   }
   function renderStatus() {
@@ -167,18 +198,49 @@ export function start(S: SpicetifyHost, doc: Document = document): Runtime {
       page && activeTarget?.uri === `spotify:playlist:${page[1]}`;
     for (const [original, entry] of managed) {
       const present = membership.get(entry.uri)?.present;
+      // Spotify's check represents curation anywhere, not just our destination.
+      // Keep the actual element and its React handlers, menu anchor, tooltip,
+      // and animation intact whenever Spotify reports that saved state.
+      const nativeSaved =
+        original.getAttribute("aria-checked") === "true" ||
+        original.getAttribute("aria-pressed") === "true";
+      original.toggleAttribute("data-ppp-hidden", !nativeSaved);
+      original.toggleAttribute("data-ppp-native", nativeSaved);
+      const state =
+        present === true ? "target" : present === false ? "other" : "pending";
+      if (original.dataset.pppMembership !== state)
+        original.dataset.pppMembership = state;
+      const description =
+        present === true
+          ? `Saved in ${activeTarget?.name || destinationLabel(config.destination)}. Open playlist menu.`
+          : "Saved elsewhere. Open playlist menu.";
+      if (original.getAttribute("aria-description") !== description)
+        original.setAttribute("aria-description", description);
+      // The native button is a sibling of our group. Cancel the parent's
+      // flex gap so both render paths occupy the same two 24px slots.
+      const gap =
+        nativeSaved && original.parentElement
+          ? parseFloat(
+              doc.defaultView?.getComputedStyle(original.parentElement)
+                .columnGap || "",
+            ) || 0
+          : 0;
+      const margin = nativeSaved && entry.heart ? `${2 - gap}px` : "";
+      if (entry.group.style.marginInlineStart !== margin)
+        entry.group.style.marginInlineStart = margin;
       const row = original.closest(
         '[role="row"], .main-trackList-trackListRow',
       );
       // Keep the player and side-panel controls. Only suppress redundant
       // playlist actions in rows of the destination playlist itself.
       entry.primary.hidden = !!(
-        onTargetPage &&
-        present &&
-        row &&
-        !row.closest('aside, [data-testid="queue"]')
+        nativeSaved ||
+        (onTargetPage &&
+          present &&
+          row &&
+          !row.closest('aside, [data-testid="queue"]'))
       );
-      entry.primary.setAttribute("aria-pressed", String(present === true));
+      pressed(entry.primary, present === true);
       icon(entry.primary, present ? "check" : "plus");
       label(entry.primary, playlistLabel(present));
       entry.group.hidden = entry.primary.hidden && !entry.heart;
@@ -205,11 +267,31 @@ export function start(S: SpicetifyHost, doc: Document = document): Runtime {
           "update",
           (event) => {
             if (!event?.data?.uri || event.data.uri === activeTarget?.uri)
-              void refreshStatus(true);
+              playlistEdited();
           },
           { uri },
         )
       : null;
+  }
+  function playlistEdited() {
+    if (disposed) return;
+    // Own writes already render their confirmed result. External edits (the
+    // native picker included) must invalidate that short consistency window.
+    if (ownPlaylistWrites) return;
+    confirmedUntil.clear();
+    void refreshStatus(true);
+    // The native picker can announce success before its membership index is
+    // updated. Retry briefly, rather than waiting for the 15-second poll.
+    for (const timer of refreshRetries) clearTimeout(timer);
+    refreshRetries.clear();
+    for (const delay of [250, 1000]) {
+      const timer = setTimeout(() => {
+        refreshRetries.delete(timer);
+        if (!disposed) void refreshStatus(true);
+      }, delay);
+      timer.unref?.();
+      refreshRetries.add(timer);
+    }
   }
   async function refreshStatus(force = false) {
     if (disposed || !config.enabled || !managed.size) return;
@@ -290,6 +372,14 @@ export function start(S: SpicetifyHost, doc: Document = document): Runtime {
     if (!config.enabled) return;
     const selector = `${LEGACY_BUTTONS}, button[aria-checked]`;
     const created = new Set();
+    let nativeRemoval = false;
+    for (const [original, entry] of managed) {
+      const saved =
+        original.getAttribute("aria-checked") === "true" ||
+        original.getAttribute("aria-pressed") === "true";
+      if (entry.nativeSaved && !saved) nativeRemoval = true;
+      entry.nativeSaved = saved;
+    }
     for (const original of doc.querySelectorAll<HTMLButtonElement>(selector)) {
       if (original.disabled || managed.has(original) || !isSaveButton(original))
         continue;
@@ -303,11 +393,21 @@ export function start(S: SpicetifyHost, doc: Document = document): Runtime {
       if (heart) group.append(heart);
       original.after(group);
       original.setAttribute("data-ppp-hidden", "");
-      managed.set(original, { uri, primary, heart, group });
+      managed.set(original, {
+        uri,
+        nativeDescription: original.getAttribute("aria-description"),
+        nativeSaved:
+          original.getAttribute("aria-checked") === "true" ||
+          original.getAttribute("aria-pressed") === "true",
+        primary,
+        heart,
+        group,
+      });
       created.add(uri);
     }
     renderStatus();
-    if (created.size) void refreshStatus();
+    if (nativeRemoval) playlistEdited();
+    else if (created.size) void refreshStatus();
   }
   function schedule() {
     if (scheduled) return;
@@ -338,7 +438,13 @@ export function start(S: SpicetifyHost, doc: Document = document): Runtime {
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ["class", "data-uri", "disabled"],
+    attributeFilter: [
+      "class",
+      "data-uri",
+      "disabled",
+      "aria-checked",
+      "aria-pressed",
+    ],
   });
   S.Player.addEventListener("songchange", schedule);
   if (api.History?.listen)
@@ -355,9 +461,10 @@ export function start(S: SpicetifyHost, doc: Document = document): Runtime {
       if (
         !event.data?.error &&
         (config.destination === "recently-updated" ||
+          !event.data?.uri ||
           event.data?.uri === activeTarget?.uri)
       )
-        void refreshStatus(true);
+        playlistEdited();
     }),
   );
   const libraryEvents = api.LibraryAPI.getEvents?.();
@@ -395,6 +502,8 @@ export function start(S: SpicetifyHost, doc: Document = document): Runtime {
       disposed = true;
       statusGeneration++;
       clearInterval(refreshTimer);
+      for (const timer of refreshRetries) clearTimeout(timer);
+      refreshRetries.clear();
       settingsView.dispose();
       playlistSubscription?.();
       unsubscribe.forEach((cancel) => cancel?.());
