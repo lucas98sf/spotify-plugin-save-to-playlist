@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.1
+
+- Add independent settings for the native playlist menu and saved-elsewhere indicators, both enabled by default for new and existing installations.
+- Turning off the playlist menu restores direct adding and removal. Turning off saved-elsewhere indicators shows + for songs outside the selected destination.
+
 ## 1.3.0
 
 - Retain Spotify’s native playlist picker for saved songs.
