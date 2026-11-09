@@ -98,6 +98,8 @@ test("validates saved options and discards previously saved playlist overrides",
       mode: "both",
       separateHeart: false,
       destination: "first-pinned",
+      playlistMenu: true,
+      showOtherPlaylists: true,
     },
   );
   assert.equal(
@@ -1021,6 +1023,123 @@ test("native removal retries a lagging index and disposed runtimes cancel retrie
     const readsBefore = reads;
     await new Promise((resolve) => setTimeout(resolve, 800));
     assert.equal(reads, readsBefore);
+  } finally {
+    runtime.dispose();
+    dom.window.close();
+  }
+});
+
+test("new saved-control settings migrate to enabled and accept only booleans", () => {
+  for (const key of ["playlistMenu", "showOtherPlaylists"]) {
+    assert.equal(settings()[key], true);
+    assert.equal(settings({ separateHeart: false, mode: "both" })[key], true);
+    assert.equal(settings({ [key]: false })[key], false);
+    assert.equal(settings({ [key]: "false" })[key], true);
+  }
+});
+
+for (const playlistMenu of [true, false]) {
+  for (const showOtherPlaylists of [true, false]) {
+    for (const present of [true, false]) {
+      test(
+        "saved-control options: menu=" +
+          playlistMenu +
+          ", elsewhere=" +
+          showOtherPlaylists +
+          ", target=" +
+          present,
+        async () => {
+          const { dom, S, calls, tracks } = stateFixture(
+            '<div data-testid="now-playing-widget" style="column-gap:8px"><button class="main-addButton-button" aria-checked="true"></button></div>',
+          );
+          if (present) tracks.add(playlist + ":" + song);
+          const doc = dom.window.document;
+          const original = doc.querySelector("button");
+          let menuClicks = 0;
+          original.onclick = () => menuClicks++;
+          const runtime = start(S, doc);
+          try {
+            runtime.configure({ playlistMenu, showOtherPlaylists });
+            await runtime.refreshStatus(true);
+            const primary = doc.querySelector(".ppp-button");
+            const useMenu = playlistMenu && (present || showOtherPlaylists);
+            assert.equal(original.hasAttribute("data-ppp-hidden"), !useMenu);
+            assert.equal(primary.hidden, useMenu);
+            assert.equal(
+              primary.dataset.pppIcon,
+              present ? "check" : showOtherPlaylists ? "checkOutline" : "plus",
+            );
+            assert.equal(
+              doc.querySelector(".ppp-controls").style.marginInlineStart,
+              useMenu ? "-6px" : "",
+            );
+            if (useMenu) {
+              original.click();
+              assert.equal(menuClicks, 1);
+              assert.equal(
+                calls.some((c) =>
+                  ["playlist", "removePlaylist"].includes(c[0]),
+                ),
+                false,
+              );
+            } else {
+              primary.click();
+              await settle();
+              assert.equal(menuClicks, 0);
+              assert.equal(tracks.has(playlist + ":" + song), !present);
+              assert.equal(
+                primary.dataset.pppIcon,
+                present
+                  ? showOtherPlaylists
+                    ? "checkOutline"
+                    : "plus"
+                  : "check",
+              );
+            }
+          } finally {
+            runtime.dispose();
+            dom.window.close();
+          }
+        },
+      );
+    }
+  }
+}
+
+test("settings expose independent saved-control toggles, retain choices and persist them", async () => {
+  const { dom, S, api, calls } = stateFixture("");
+  let saved = { mode: "both", separateHeart: false };
+  api.LocalStorageAPI.getItem = () => saved;
+  api.LocalStorageAPI.setItem = (key, value) => {
+    saved = value;
+    calls.push(["storage", key, value]);
+  };
+  let modal;
+  S.PopupModal.display = (value) => {
+    modal = value;
+  };
+  const runtime = start(S, dom.window.document);
+  const control = (text) =>
+    [...modal.content.querySelectorAll("label")]
+      .find((l) => l.textContent.includes(text))
+      .querySelector("input");
+  try {
+    runtime.showSettings();
+    assert.equal(control("Open Spotify").checked, true);
+    assert.equal(control("outlined check").checked, true);
+    control("Open Spotify").checked = false;
+    modal.content.querySelector(".ppp-save").click();
+    assert.equal(saved.playlistMenu, false);
+    assert.equal(saved.showOtherPlaylists, true);
+    assert.equal(saved.mode, "both");
+    assert.equal(saved.separateHeart, false);
+    runtime.showSettings();
+    assert.equal(control("Open Spotify").checked, false);
+    assert.equal(control("outlined check").checked, true);
+    control("outlined check").checked = false;
+    modal.content.querySelector(".ppp-save").click();
+    assert.equal(saved.playlistMenu, false);
+    assert.equal(saved.showOtherPlaylists, false);
   } finally {
     runtime.dispose();
     dom.window.close();

@@ -11,6 +11,8 @@ export const DEFAULTS: Settings = {
   mode: "playlist",
   destination: "first-pinned",
   separateHeart: true,
+  playlistMenu: true,
+  showOtherPlaylists: true,
 };
 export const TRACK = /^spotify:track:[A-Za-z0-9]+$/;
 export const PLAYLIST = /^spotify:playlist:[A-Za-z0-9]+$/;

@@ -14,7 +14,9 @@
     enabled: true,
     mode: "playlist",
     destination: "first-pinned",
-    separateHeart: true
+    separateHeart: true,
+    playlistMenu: true,
+    showOtherPlaylists: true
   };
   var TRACK = /^spotify:track:[A-Za-z0-9]+$/;
   var PLAYLIST = /^spotify:playlist:[A-Za-z0-9]+$/;
@@ -32,7 +34,12 @@
     const result = { ...DEFAULTS };
     if (value && typeof value === "object") {
       const stored = value;
-      for (const key of ["enabled", "separateHeart"]) {
+      for (const key of [
+        "enabled",
+        "separateHeart",
+        "playlistMenu",
+        "showOtherPlaylists"
+      ]) {
         if (typeof stored[key] === "boolean") result[key] = stored[key];
       }
       if (stored.mode === "playlist" || stored.mode === "both")
@@ -452,6 +459,14 @@
         "separateHeart",
         "Show a separate \u2665 button for Liked Songs alongside \u2295"
       );
+      toggle(
+        "playlistMenu",
+        "Open Spotify\u2019s playlist menu when clicking a saved check"
+      );
+      toggle(
+        "showOtherPlaylists",
+        "Show an outlined check for songs saved elsewhere"
+      );
       const status = doc.createElement("p");
       status.setAttribute("role", "status");
       root.append(status);
@@ -481,7 +496,9 @@
             enabled: controls.enabled.checked,
             mode: mode.value,
             destination: destination.value,
-            separateHeart: controls.separateHeart.checked
+            separateHeart: controls.separateHeart.checked,
+            playlistMenu: controls.playlistMenu.checked,
+            showOtherPlaylists: controls.showOtherPlaylists.checked
           });
           S.PopupModal.hide();
           S.showNotification(`${NAME} settings saved`);
@@ -790,26 +807,31 @@
       for (const [original, entry] of managed) {
         const present = membership.get(entry.uri)?.present;
         const nativeSaved = original.getAttribute("aria-checked") === "true" || original.getAttribute("aria-pressed") === "true";
-        original.toggleAttribute("data-ppp-hidden", !nativeSaved);
-        original.toggleAttribute("data-ppp-native", nativeSaved);
+        const showElsewhere = config.showOtherPlaylists && nativeSaved;
+        const showNative = config.playlistMenu && nativeSaved && (present === true || config.showOtherPlaylists);
+        original.toggleAttribute("data-ppp-hidden", !showNative);
+        original.toggleAttribute("data-ppp-native", showNative);
         const state = present === true ? "target" : present === false ? "other" : "pending";
         if (original.dataset.pppMembership !== state)
           original.dataset.pppMembership = state;
         const description = present === true ? `Saved in ${activeTarget?.name || destinationLabel(config.destination)}. Open playlist menu.` : "Saved elsewhere. Open playlist menu.";
         if (original.getAttribute("aria-description") !== description)
           original.setAttribute("aria-description", description);
-        const gap = nativeSaved && original.parentElement ? parseFloat(
+        const gap = showNative && original.parentElement ? parseFloat(
           doc.defaultView?.getComputedStyle(original.parentElement).columnGap || ""
         ) || 0 : 0;
-        const margin = nativeSaved && entry.heart ? `${2 - gap}px` : "";
+        const margin = showNative && entry.heart ? `${2 - gap}px` : "";
         if (entry.group.style.marginInlineStart !== margin)
           entry.group.style.marginInlineStart = margin;
         const row = original.closest(
           '[role="row"], .main-trackList-trackListRow'
         );
-        entry.primary.hidden = !!(nativeSaved || onTargetPage && present && row && !row.closest('aside, [data-testid="queue"]'));
+        entry.primary.hidden = !!(showNative || onTargetPage && present && row && !row.closest('aside, [data-testid="queue"]'));
         pressed(entry.primary, present === true);
-        icon(entry.primary, present ? "check" : "plus");
+        icon(
+          entry.primary,
+          present ? "check" : showElsewhere ? "checkOutline" : "plus"
+        );
         label(entry.primary, playlistLabel(present));
         entry.group.hidden = entry.primary.hidden && !entry.heart;
         if (liked.has(entry.uri)) setLiked(entry.uri, liked.get(entry.uri));

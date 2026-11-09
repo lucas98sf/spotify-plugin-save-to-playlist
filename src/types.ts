@@ -6,8 +6,11 @@ export interface Settings {
   mode: SaveMode;
   destination: Destination;
   separateHeart: boolean;
+  playlistMenu: boolean;
+  showOtherPlaylists: boolean;
 }
-export type ToggleKey = "enabled" | "separateHeart";
+export type ToggleKey =
+  "enabled" | "separateHeart" | "playlistMenu" | "showOtherPlaylists";
 export interface LibraryItem {
   uri: string;
   name?: string;

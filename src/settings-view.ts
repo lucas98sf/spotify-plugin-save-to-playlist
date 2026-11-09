@@ -83,6 +83,14 @@ export function createSettingsView(
       "separateHeart",
       "Show a separate ♥ button for Liked Songs alongside ⊕",
     );
+    toggle(
+      "playlistMenu",
+      "Open Spotify’s playlist menu when clicking a saved check",
+    );
+    toggle(
+      "showOtherPlaylists",
+      "Show an outlined check for songs saved elsewhere",
+    );
     const status = doc.createElement("p");
     status.setAttribute("role", "status");
     root.append(status);
@@ -115,6 +123,8 @@ export function createSettingsView(
           mode: mode.value,
           destination: destination.value,
           separateHeart: controls.separateHeart.checked,
+          playlistMenu: controls.playlistMenu.checked,
+          showOtherPlaylists: controls.showOtherPlaylists.checked,
         });
         S.PopupModal.hide();
         S.showNotification(`${NAME} settings saved`);

@@ -204,8 +204,15 @@ export function start(S: SpicetifyHost, doc: Document = document): Runtime {
       const nativeSaved =
         original.getAttribute("aria-checked") === "true" ||
         original.getAttribute("aria-pressed") === "true";
-      original.toggleAttribute("data-ppp-hidden", !nativeSaved);
-      original.toggleAttribute("data-ppp-native", nativeSaved);
+      // A hidden elsewhere indicator leaves the quick-save plus available.
+      // The menu preference applies to visible checks, not to that plus.
+      const showElsewhere = config.showOtherPlaylists && nativeSaved;
+      const showNative =
+        config.playlistMenu &&
+        nativeSaved &&
+        (present === true || config.showOtherPlaylists);
+      original.toggleAttribute("data-ppp-hidden", !showNative);
+      original.toggleAttribute("data-ppp-native", showNative);
       const state =
         present === true ? "target" : present === false ? "other" : "pending";
       if (original.dataset.pppMembership !== state)
@@ -219,13 +226,13 @@ export function start(S: SpicetifyHost, doc: Document = document): Runtime {
       // The native button is a sibling of our group. Cancel the parent's
       // flex gap so both render paths occupy the same two 24px slots.
       const gap =
-        nativeSaved && original.parentElement
+        showNative && original.parentElement
           ? parseFloat(
               doc.defaultView?.getComputedStyle(original.parentElement)
                 .columnGap || "",
             ) || 0
           : 0;
-      const margin = nativeSaved && entry.heart ? `${2 - gap}px` : "";
+      const margin = showNative && entry.heart ? `${2 - gap}px` : "";
       if (entry.group.style.marginInlineStart !== margin)
         entry.group.style.marginInlineStart = margin;
       const row = original.closest(
@@ -234,14 +241,17 @@ export function start(S: SpicetifyHost, doc: Document = document): Runtime {
       // Keep the player and side-panel controls. Only suppress redundant
       // playlist actions in rows of the destination playlist itself.
       entry.primary.hidden = !!(
-        nativeSaved ||
+        showNative ||
         (onTargetPage &&
           present &&
           row &&
           !row.closest('aside, [data-testid="queue"]'))
       );
       pressed(entry.primary, present === true);
-      icon(entry.primary, present ? "check" : "plus");
+      icon(
+        entry.primary,
+        present ? "check" : showElsewhere ? "checkOutline" : "plus",
+      );
       label(entry.primary, playlistLabel(present));
       entry.group.hidden = entry.primary.hidden && !entry.heart;
       if (liked.has(entry.uri)) setLiked(entry.uri, liked.get(entry.uri)!);
