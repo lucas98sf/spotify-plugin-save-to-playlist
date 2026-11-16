@@ -6,10 +6,10 @@ const savedElsewhereIcon = encodeURIComponent(
 
 export const STYLES = `
     [data-ppp-hidden] { display: none !important; }
-    .ppp-controls { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
+    .ppp-controls { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; vertical-align: middle; }
     .ppp-controls[hidden], .ppp-button[hidden] { display: none !important; }
-    .ppp-button { box-sizing: border-box; background: transparent; border: 0; color: var(--spice-subtext, #b3b3b3); cursor: pointer; padding: 4px; width: 24px; height: 32px; display: inline-flex; align-items: center; justify-content: center; }
-    [data-ppp-native] { box-sizing: border-box !important; width: 24px !important; min-width: 24px !important; height: 32px !important; min-height: 32px !important; padding: 4px !important; margin: 0 !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; position: relative; }
+    .ppp-button { box-sizing: border-box; background: transparent; border: 0; color: var(--spice-subtext, #b3b3b3); cursor: pointer; padding: 0; width: 32px; min-width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; }
+    [data-ppp-native] { box-sizing: border-box !important; width: 32px !important; min-width: 32px !important; height: 32px !important; min-height: 32px !important; padding: 0 !important; margin: 0 !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; vertical-align: middle !important; position: relative; }
     [data-ppp-native] svg { width: 16px !important; height: 16px !important; }
     [data-ppp-native][data-ppp-membership="target"] { color: var(--spice-button, #1ed760) !important; }
     [data-ppp-native][data-ppp-membership="target"] svg { color: var(--spice-button, #1ed760) !important; }
